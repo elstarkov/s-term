@@ -1,0 +1,21 @@
+# Rust build output
+/target
+
+# Rust backup files
+**/*.rs.bk
+
+# macOS
+.DS_Store
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment / secrets (never commit these)
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
