@@ -53,6 +53,8 @@ fn print_help() {
            mockterm [COMMAND [ARGS...]]\n\n\
          If COMMAND is omitted, $SHELL (or /bin/zsh) is launched in each pane.\n\n\
          KEYBOARD:\n  \
+           Cmd+T          new tab\n  \
+           Cmd+1 .. Cmd+9 switch to tab N\n  \
            Cmd+D          split right (panes side-by-side)\n  \
            Cmd+Shift+D    split down (panes stacked)\n  \
            Cmd+W          close the focused pane\n  \

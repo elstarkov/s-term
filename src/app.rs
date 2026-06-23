@@ -1,6 +1,6 @@
-//! The mockterm application: owns the pane tree, the terminal backends, and the
-//! eframe update loop that renders panes, handles draggable dividers, routes
-//! keyboard shortcuts, and drains PTY events.
+//! The mockterm application: owns the tabs (each a pane tree), the terminal
+//! backends, and the eframe update loop that renders the active tab's panes,
+//! handles draggable dividers, routes keyboard shortcuts, and drains PTY events.
 
 use std::collections::HashMap;
 use std::io;
@@ -29,10 +29,19 @@ struct Pane {
     title: String,
 }
 
-pub struct MockTerm {
+/// One tab: an independent pane layout with its own focused pane.
+struct Tab {
     tree: Tree,
-    panes: HashMap<PaneId, Pane>,
     focused: PaneId,
+    /// Content rect of the last frame this tab was drawn, for spatial navigation.
+    last_area: Rect,
+}
+
+pub struct MockTerm {
+    tabs: Vec<Tab>,
+    active: usize,
+    /// All panes across all tabs, keyed by their globally-unique id.
+    panes: HashMap<PaneId, Pane>,
     next_id: u64,
     pty_tx: Sender<(u64, PtyEvent)>,
     pty_rx: Receiver<(u64, PtyEvent)>,
@@ -40,8 +49,6 @@ pub struct MockTerm {
     font: TerminalFont,
     cfg: Config,
     default_title: String,
-    /// Content rect of the last frame, used for spatial keyboard navigation.
-    last_area: Rect,
 }
 
 const ACCENT: Color32 = Color32::from_rgb(102, 161, 255);
@@ -53,9 +60,9 @@ impl MockTerm {
         let (pty_tx, pty_rx) = channel();
         let default_title = shell_basename(&cfg.shell);
         let mut app = Self {
-            tree: Tree::new(0),
+            tabs: Vec::new(),
+            active: 0,
             panes: HashMap::new(),
-            focused: 0,
             next_id: 0,
             pty_tx,
             pty_rx,
@@ -65,18 +72,22 @@ impl MockTerm {
             }),
             cfg,
             default_title,
-            last_area: Rect::ZERO,
         };
-        // First pane fills the window. If the shell can't spawn we can't do
+        // First tab fills the window. If the shell can't spawn we can't do
         // anything useful, so fail loudly.
         let id = app
             .spawn_pane(&cc.egui_ctx)
             .expect("failed to spawn initial shell");
-        app.tree = Tree::new(id);
-        app.focused = id;
+        app.tabs.push(Tab {
+            tree: Tree::new(id),
+            focused: id,
+            last_area: Rect::ZERO,
+        });
+        app.active = 0;
         app
     }
 
+    /// Spawn a fresh terminal backend and register it in the global pane map.
     fn spawn_pane(&mut self, ctx: &egui::Context) -> io::Result<PaneId> {
         let id = self.next_id;
         self.next_id += 1;
@@ -100,11 +111,28 @@ impl MockTerm {
         Ok(id)
     }
 
+    /// Open a new tab containing a single fresh pane, and focus it.
+    fn new_tab(&mut self, ctx: &egui::Context) {
+        match self.spawn_pane(ctx) {
+            Ok(id) => {
+                self.tabs.push(Tab {
+                    tree: Tree::new(id),
+                    focused: id,
+                    last_area: Rect::ZERO,
+                });
+                self.active = self.tabs.len() - 1;
+            }
+            Err(e) => eprintln!("mockterm: failed to open tab: {e}"),
+        }
+    }
+
+    /// Split the active tab's focused pane along `axis`.
     fn split(&mut self, axis: Axis, ctx: &egui::Context) {
         match self.spawn_pane(ctx) {
             Ok(id) => {
-                self.tree.split(self.focused, id, axis, true);
-                self.focused = id;
+                let tab = &mut self.tabs[self.active];
+                tab.tree.split(tab.focused, id, axis, true);
+                tab.focused = id;
             }
             Err(e) => eprintln!("mockterm: failed to spawn pane: {e}"),
         }
@@ -114,19 +142,34 @@ impl MockTerm {
         if !self.panes.contains_key(&pane) {
             return; // already gone (e.g. duplicate Exit + ChildExit)
         }
-        let next = self.tree.focus_after_close(pane);
-        self.tree.close(pane);
+        let Some(ti) = self.tabs.iter().position(|t| t.tree.contains(pane)) else {
+            self.panes.remove(&pane);
+            return;
+        };
+
+        let next = self.tabs[ti].tree.focus_after_close(pane);
+        let removed = self.tabs[ti].tree.close(pane);
         // Dropping the backend sends Shutdown to its PTY loop, killing the shell.
         self.panes.remove(&pane);
 
-        if self.panes.is_empty() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            return;
-        }
-        if self.focused == pane {
-            self.focused = next
+        if !removed {
+            // That was the tab's last pane — drop the whole tab.
+            self.tabs.remove(ti);
+            if self.tabs.is_empty() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                return;
+            }
+            if self.active >= self.tabs.len() {
+                self.active = self.tabs.len() - 1;
+            } else if self.active > ti {
+                self.active -= 1;
+            }
+        } else if self.tabs[ti].focused == pane {
+            let fallback = self.tabs[ti].tree.first_pane();
+            let nf = next
                 .filter(|p| self.panes.contains_key(p))
-                .unwrap_or_else(|| *self.panes.keys().next().unwrap());
+                .unwrap_or(fallback);
+            self.tabs[ti].focused = nf;
         }
     }
 
@@ -170,18 +213,34 @@ impl MockTerm {
             ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(mods, key)))
         };
 
-        // Split right (side-by-side) / split down (stacked) — iTerm2 semantics.
+        // Tabs: new tab, and jump to tab N by number.
+        if hit(cmd, Key::T) {
+            self.new_tab(ctx);
+        }
+        const NUM_KEYS: [Key; 9] = [
+            Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6,
+            Key::Num7, Key::Num8, Key::Num9,
+        ];
+        for (i, key) in NUM_KEYS.iter().enumerate() {
+            if hit(cmd, *key) && i < self.tabs.len() {
+                self.active = i;
+            }
+        }
+
+        // Splits.
         if hit(cmd, Key::D) {
             self.split(Axis::Horizontal, ctx);
         }
         if hit(cmd_shift, Key::D) {
             self.split(Axis::Vertical, ctx);
         }
-        // Close focused pane.
+        // Close focused pane (collapses/removes its tab when it was the last).
         if hit(cmd, Key::W) {
-            self.close_pane(self.focused, ctx);
+            let pane = self.tabs[self.active].focused;
+            self.close_pane(pane, ctx);
         }
-        // Directional navigation (Cmd+Alt+Arrows).
+
+        // Directional navigation within the active tab.
         let nav = [
             (Key::ArrowLeft, Dir::Left),
             (Key::ArrowRight, Dir::Right),
@@ -190,11 +249,42 @@ impl MockTerm {
         ];
         for (key, dir) in nav {
             if hit(cmd_alt, key) {
-                let (leaves, _) = self.tree.geometry(self.last_area);
-                if let Some(p) = neighbor(&leaves, self.focused, dir) {
-                    self.focused = p;
+                let a = self.active;
+                let (leaves, _) = self.tabs[a].tree.geometry(self.tabs[a].last_area);
+                if let Some(p) = neighbor(&leaves, self.tabs[a].focused, dir) {
+                    self.tabs[a].focused = p;
                 }
             }
+        }
+    }
+
+    fn draw_tab_strip(&mut self, ctx: &egui::Context) {
+        let mut switch_to: Option<usize> = None;
+        let mut open_new = false;
+        egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                for (i, tab) in self.tabs.iter().enumerate() {
+                    let raw = self
+                        .panes
+                        .get(&tab.focused)
+                        .map(|p| p.title.as_str())
+                        .unwrap_or("—");
+                    let label = format!("{}  {}", i + 1, truncate(raw, 18));
+                    if ui.selectable_label(i == self.active, label).clicked() {
+                        switch_to = Some(i);
+                    }
+                }
+                if ui.button("+").on_hover_text("New tab (Cmd+T)").clicked() {
+                    open_new = true;
+                }
+            });
+        });
+        if let Some(i) = switch_to {
+            self.active = i;
+        }
+        if open_new {
+            self.new_tab(ctx);
         }
     }
 }
@@ -203,13 +293,15 @@ impl eframe::App for MockTerm {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_pty_events(ctx);
         self.handle_shortcuts(ctx);
+        self.draw_tab_strip(ctx);
 
-        // Status / hint bar.
+        // Status / hint bar (active tab's focused pane + shortcut hints).
         egui::TopBottomPanel::top("status").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let title = self
-                    .panes
-                    .get(&self.focused)
+                    .tabs
+                    .get(self.active)
+                    .and_then(|t| self.panes.get(&t.focused))
                     .map(|p| p.title.as_str())
                     .unwrap_or("mockterm");
                 ui.label(
@@ -220,7 +312,7 @@ impl eframe::App for MockTerm {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
                         egui::RichText::new(
-                            "⌘D split right   ⌘⇧D split down   ⌘W close   ⌘⌥←→↑↓ move   drag borders to resize",
+                            "⌘T tab  ⌘1-9 switch  ⌘D split→  ⌘⇧D split↓  ⌘W close  ⌘⌥←→↑↓ move  drag borders",
                         )
                         .color(Color32::from_gray(120))
                         .size(12.0),
@@ -229,7 +321,8 @@ impl eframe::App for MockTerm {
             });
         });
 
-        let focused = self.focused;
+        let active = self.active;
+        let focused = self.tabs[active].focused;
         let theme = self.theme.clone();
         let font = self.font.clone();
 
@@ -242,8 +335,8 @@ impl eframe::App for MockTerm {
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             let area = ui.max_rect();
-            self.last_area = area;
-            let (leaves, dividers) = self.tree.geometry(area);
+            self.tabs[active].last_area = area;
+            let (leaves, dividers) = self.tabs[active].tree.geometry(area);
 
             // 1) Draw each pane's terminal.
             for (pane_id, rect) in &leaves {
@@ -267,7 +360,7 @@ impl eframe::App for MockTerm {
 
             // 2) Draggable dividers on top of the panes.
             for div in &dividers {
-                let id = Id::new(("mockterm_divider", div.node));
+                let id = Id::new(("mockterm_divider", active, div.node));
                 let resp = ui.interact(div.rect, id, Sense::drag());
                 let hot = resp.hovered() || resp.dragged();
                 if hot {
@@ -303,10 +396,10 @@ impl eframe::App for MockTerm {
         });
 
         if let Some(p) = clicked {
-            self.focused = p;
+            self.tabs[active].focused = p;
         }
         for (node, ratio) in ratio_updates {
-            self.tree.set_ratio(node, ratio);
+            self.tabs[active].tree.set_ratio(node, ratio);
         }
     }
 }
@@ -318,4 +411,14 @@ fn shell_basename(shell: &str) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or(shell)
         .to_string()
+}
+
+/// Shorten a title for the tab strip, appending an ellipsis when clipped.
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let kept: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{kept}…")
+    }
 }

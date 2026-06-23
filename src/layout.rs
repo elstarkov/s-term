@@ -153,6 +153,16 @@ impl Tree {
         }
     }
 
+    /// Whether this tree (tab) currently holds the given pane.
+    pub fn contains(&self, pane: PaneId) -> bool {
+        self.find_leaf(pane).is_some()
+    }
+
+    /// The first pane in the tree — a safe fallback focus target.
+    pub fn first_pane(&self) -> PaneId {
+        self.first_leaf(self.root)
+    }
+
     /// First pane reachable from a node (depth-first, first child).
     fn first_leaf(&self, idx: usize) -> PaneId {
         match self.nodes[idx].node {
