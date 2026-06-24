@@ -55,6 +55,7 @@ fn print_help() {
          KEYBOARD:\n  \
            Cmd+T          new tab\n  \
            Cmd+1 .. Cmd+9 switch to tab N\n  \
+           Opt+1 .. Opt+9 focus pane N in the current tab\n  \
            Cmd+D          split right (panes side-by-side)\n  \
            Cmd+Shift+D    split down (panes stacked)\n  \
            Cmd+W          close the focused pane\n  \
