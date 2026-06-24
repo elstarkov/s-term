@@ -43,8 +43,8 @@ struct Entry {
     parent: Option<usize>,
 }
 
-/// Thickness of the draggable divider between two panes, in points.
-pub const DIVIDER: f32 = 6.0;
+/// Thickness of the draggable divider gap between two panes, in points.
+pub const DIVIDER: f32 = 8.0;
 
 /// A divider handle produced by the geometry pass.
 pub struct Divider {
@@ -89,9 +89,18 @@ impl Tree {
     }
 
     fn find_leaf(&self, pane: PaneId) -> Option<usize> {
-        self.nodes.iter().position(|e| {
-            matches!(e.node, Node::Leaf { pane: p } if p == pane)
-        })
+        self.find_leaf_from(self.root, pane)
+    }
+
+    /// Search only the nodes reachable from `idx`, so freed-but-not-yet-reused
+    /// arena slots can never produce a false match.
+    fn find_leaf_from(&self, idx: usize, pane: PaneId) -> Option<usize> {
+        match self.nodes[idx].node {
+            Node::Leaf { pane: p } => (p == pane).then_some(idx),
+            Node::Split { a, b, .. } => self
+                .find_leaf_from(a, pane)
+                .or_else(|| self.find_leaf_from(b, pane)),
+        }
     }
 
     /// Split the pane `target` into two, inserting `new_pane`. `new_after`
@@ -105,6 +114,45 @@ impl Tree {
         let fresh = self.alloc(Node::Leaf { pane: new_pane }, Some(leaf));
         let (a, b) = if new_after { (kept, fresh) } else { (fresh, kept) };
         self.nodes[leaf].node = Node::Split { axis, ratio: 0.5, a, b };
+    }
+
+    /// Recursively copy the subtree rooted at `src_idx` in `src` into this
+    /// arena, returning the new root index. Pane ids are globally unique so they
+    /// carry over unchanged — only structural indices are remapped.
+    fn import_from(&mut self, src: &Tree, src_idx: usize, parent: Option<usize>) -> usize {
+        match src.nodes[src_idx].node {
+            Node::Leaf { pane } => self.alloc(Node::Leaf { pane }, parent),
+            Node::Split { axis, ratio, a, b } => {
+                let new = self.alloc(Node::Split { axis, ratio, a: 0, b: 0 }, parent);
+                let na = self.import_from(src, a, Some(new));
+                let nb = self.import_from(src, b, Some(new));
+                if let Node::Split { a, b, .. } = &mut self.nodes[new].node {
+                    *a = na;
+                    *b = nb;
+                }
+                new
+            }
+        }
+    }
+
+    /// Splice another tree's entire layout next to `target`, splitting along
+    /// `axis`. `new_after` puts the imported panes to the right/below. Used to
+    /// merge a dragged tab into this tab as new pane(s).
+    pub fn attach_subtree(
+        &mut self,
+        target: PaneId,
+        src: &Tree,
+        axis: Axis,
+        new_after: bool,
+    ) -> bool {
+        let Some(leaf) = self.find_leaf(target) else {
+            return false;
+        };
+        let kept = self.alloc(Node::Leaf { pane: target }, Some(leaf));
+        let imported = self.import_from(src, src.root, Some(leaf));
+        let (a, b) = if new_after { (kept, imported) } else { (imported, kept) };
+        self.nodes[leaf].node = Node::Split { axis, ratio: 0.5, a, b };
+        true
     }
 
     /// Remove `pane`, collapsing its parent split into the surviving sibling.
@@ -161,6 +209,24 @@ impl Tree {
     /// The first pane in the tree — a safe fallback focus target.
     pub fn first_pane(&self) -> PaneId {
         self.first_leaf(self.root)
+    }
+
+    /// Panes in stable tree order (top/left child first) — the order used for
+    /// indexed focus switching (Option+number).
+    pub fn panes_in_order(&self) -> Vec<PaneId> {
+        let mut out = Vec::new();
+        self.collect_panes(self.root, &mut out);
+        out
+    }
+
+    fn collect_panes(&self, idx: usize, out: &mut Vec<PaneId>) {
+        match self.nodes[idx].node {
+            Node::Leaf { pane } => out.push(pane),
+            Node::Split { a, b, .. } => {
+                self.collect_panes(a, out);
+                self.collect_panes(b, out);
+            }
+        }
     }
 
     /// First pane reachable from a node (depth-first, first child).
@@ -294,4 +360,62 @@ pub fn neighbor(
         }
     }
     best
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn area() -> Rect {
+        Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0))
+    }
+
+    #[test]
+    fn attach_merges_two_single_pane_tabs() {
+        let mut a = Tree::new(1); // tab A: pane 1
+        let b = Tree::new(2); // tab B: pane 2
+        assert!(a.contains(1) && !a.contains(2));
+
+        // Drop B onto pane 1, landing to the right.
+        assert!(a.attach_subtree(1, &b, Axis::Horizontal, true));
+        assert!(a.contains(1) && a.contains(2));
+
+        let (leaves, dividers) = a.geometry(area());
+        assert_eq!(leaves.len(), 2, "both panes present");
+        assert_eq!(dividers.len(), 1, "one divider between them");
+        let p1 = leaves.iter().find(|(p, _)| *p == 1).unwrap().1;
+        let p2 = leaves.iter().find(|(p, _)| *p == 2).unwrap().1;
+        assert!(p1.left() < p2.left(), "pane 1 is left of pane 2");
+    }
+
+    #[test]
+    fn attach_imports_a_whole_multi_pane_subtree() {
+        let mut a = Tree::new(1);
+        let mut b = Tree::new(2);
+        b.split(2, 3, Axis::Vertical, true); // tab B holds panes 2 (top) and 3 (bottom)
+
+        assert!(a.attach_subtree(1, &b, Axis::Horizontal, false)); // land on the left
+        assert!(a.contains(1) && a.contains(2) && a.contains(3));
+
+        let (leaves, _) = a.geometry(area());
+        assert_eq!(leaves.len(), 3, "all three panes tile the merged tab");
+    }
+
+    #[test]
+    fn panes_in_order_is_left_to_right() {
+        let mut a = Tree::new(1);
+        a.split(1, 2, Axis::Horizontal, true); // [1 | 2]
+        a.split(2, 3, Axis::Horizontal, true); // [1 | [2 | 3]]
+        assert_eq!(a.panes_in_order(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn close_collapses_back_to_a_single_pane() {
+        let mut a = Tree::new(1);
+        let b = Tree::new(2);
+        a.attach_subtree(1, &b, Axis::Horizontal, true);
+        assert!(a.close(2));
+        assert!(a.contains(1) && !a.contains(2));
+        assert_eq!(a.geometry(area()).0.len(), 1);
+    }
 }
