@@ -103,6 +103,7 @@ const TAB_MIN_W: f32 = 150.0; // minimum tab width, so tabs feel roomy
 
 impl Tessera {
     pub fn new(cc: &eframe::CreationContext<'_>, cfg: Config) -> Self {
+        configure_fonts(&cc.egui_ctx);
         let (pty_tx, pty_rx) = channel();
         let default_title = shell_basename(&cfg.shell);
         let mut app = Self {
@@ -829,6 +830,29 @@ fn shell_basename(shell: &str) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or(shell)
         .to_string()
+}
+
+/// Register a Nerd Font symbols fallback after egui's default fonts, so prompt
+/// icons and powerline glyphs (which the bundled monospace font lacks) render.
+fn configure_fonts(ctx: &egui::Context) {
+    use egui::{FontData, FontFamily};
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "nerd_symbols".to_owned(),
+        std::sync::Arc::new(FontData::from_static(include_bytes!(
+            "../assets/fonts/SymbolsNerdFontMono-Regular.ttf"
+        ))),
+    );
+    // Append as a last-resort fallback in both families (the primary font is
+    // tried first; missing glyphs fall through to the Nerd symbols).
+    for family in [FontFamily::Monospace, FontFamily::Proportional] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .push("nerd_symbols".to_owned());
+    }
+    ctx.set_fonts(fonts);
 }
 
 /// Directory new shells start in. Launched from a terminal we inherit the launch

@@ -30,6 +30,8 @@ is a real terminal running a real shell (or `tmux`).
 - **GPU-accelerated** rendering via `eframe`/`egui`.
 - **Real terminal emulation** — full VT/ANSI, colours, scrollback, selection,
   copy/paste — powered by Alacritty's terminal core.
+- **Nerd Font ready** — bundles a Nerd Font symbols fallback, so prompt icons
+  and powerline glyphs render out of the box.
 
 ## Keybindings
 
@@ -67,8 +69,8 @@ instead, run it as the command: `tessera tmux new -A -s main`.
 
 ## Limitations
 
-- **Fonts:** uses egui's bundled monospace with no font fallback yet, so Nerd
-  Font icons, emoji, CJK, and powerline glyphs may not render. No ligatures.
+- **Fonts:** Nerd Font icons and powerline glyphs render via a bundled symbols
+  fallback. CJK and colour emoji still need their own fonts; no ligatures.
 - **No config file** yet — font, theme, shell, and keybindings aren't
   customisable without editing the source.
 - **No inline images** (Sixel / kitty / iTerm protocols), no scrollback search.
@@ -91,7 +93,8 @@ vendor/
 ## Credits & license
 
 Tessera is [MIT-licensed](LICENSE). It vendors and lightly patches
-[`egui_term`](https://github.com/Harzu/egui_term) (MIT) and builds on
+[`egui_term`](https://github.com/Harzu/egui_term) (MIT), bundles
+[Symbols Nerd Font](https://www.nerdfonts.com) (MIT), and builds on
 [`alacritty_terminal`](https://github.com/alacritty/alacritty),
 [`egui`/`eframe`](https://github.com/emilk/egui), and `portable-pty`.
 
