@@ -27,15 +27,10 @@ SRC_PNG="$DIST/icon-1024.png"
 rm -rf "$APP" "$ICONSET" "$DIST/$APP_NAME.icns" "$DIST/$APP_NAME.dmg"
 mkdir -p "$DIST"
 
-echo "==> 1/4  Icon  (assets/icon.svg -> $APP_NAME.icns)"
-qlmanage -t -s 1024 -o "$DIST" assets/icon.svg >/dev/null 2>&1 || true
-if [ -f "$DIST/icon.svg.png" ]; then
-  sips -z 1024 1024 "$DIST/icon.svg.png" --out "$SRC_PNG" >/dev/null
-  rm -f "$DIST/icon.svg.png"
-elif [ ! -f "$SRC_PNG" ]; then
-  echo "    ! could not rasterize the SVG; drop a 1024x1024 PNG at $SRC_PNG and re-run" >&2
-  exit 1
-fi
+echo "==> 1/4  Icon  (assets/icon.png -> $APP_NAME.icns)"
+# Use the committed transparent PNG as the icon source. qlmanage was baking a
+# white background when rasterising the SVG, so we keep a real RGBA source here.
+cp assets/icon.png "$SRC_PNG"
 mkdir -p "$ICONSET"
 gen() { sips -z "$1" "$1" "$SRC_PNG" --out "$ICONSET/$2" >/dev/null; }
 gen 16   icon_16x16.png;     gen 32   icon_16x16@2x.png
