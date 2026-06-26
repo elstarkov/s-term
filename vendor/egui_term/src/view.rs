@@ -145,7 +145,7 @@ impl<'a> TerminalView<'a> {
     ) -> Self {
         // mockterm patch: keyboard input follows the *focused* pane regardless
         // of pointer position, but mouse interaction (clicks, selection, wheel)
-        // is still gated on the pointer being over this pane — otherwise a click
+        // is still gated on the pointer being over this pane - otherwise a click
         // in another split would drive a selection in the focused one.
         let has_focus = layout.has_focus();
         let hovered = layout.contains_pointer();
