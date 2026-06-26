@@ -118,7 +118,7 @@ impl Tree {
 
     /// Recursively copy the subtree rooted at `src_idx` in `src` into this
     /// arena, returning the new root index. Pane ids are globally unique so they
-    /// carry over unchanged — only structural indices are remapped.
+    /// carry over unchanged - only structural indices are remapped.
     fn import_from(&mut self, src: &Tree, src_idx: usize, parent: Option<usize>) -> usize {
         match src.nodes[src_idx].node {
             Node::Leaf { pane } => self.alloc(Node::Leaf { pane }, parent),
@@ -206,12 +206,12 @@ impl Tree {
         self.find_leaf(pane).is_some()
     }
 
-    /// The first pane in the tree — a safe fallback focus target.
+    /// The first pane in the tree - a safe fallback focus target.
     pub fn first_pane(&self) -> PaneId {
         self.first_leaf(self.root)
     }
 
-    /// Panes in stable tree order (top/left child first) — the order used for
+    /// Panes in stable tree order (top/left child first) - the order used for
     /// indexed focus switching (Option+number).
     pub fn panes_in_order(&self) -> Vec<PaneId> {
         let mut out = Vec::new();
