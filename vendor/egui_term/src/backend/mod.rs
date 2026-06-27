@@ -405,9 +405,11 @@ impl TerminalBackend {
                 }
             }
 
-            open::that(url).unwrap_or_else(|_| {
-                panic!("link opening is failed");
-            })
+            // A bad/unhandled URL must not take the whole terminal down; just
+            // report it and carry on.
+            if let Err(e) = open::that(url) {
+                eprintln!("tessera: couldn't open link: {e}");
+            }
         }
     }
 

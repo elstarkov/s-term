@@ -148,7 +148,7 @@ impl TerminalTheme {
                     };
 
                     return hex_to_color(color)
-                        .unwrap_or_else(|_| panic!("invalid color {}", color));
+                        .unwrap_or_else(|_| Color32::from_rgb(255, 0, 255));
                 }
 
                 // Other colors
@@ -199,7 +199,7 @@ impl TerminalTheme {
                 };
 
                 hex_to_color(color)
-                    .unwrap_or_else(|_| panic!("invalid color {}", color))
+                    .unwrap_or_else(|_| Color32::from_rgb(255, 0, 255))
             },
         }
     }
