@@ -875,6 +875,14 @@ impl eframe::App for Tessera {
         if self.editing.is_none() {
             self.handle_shortcuts(ctx);
         }
+        // Closing the last pane (Cmd+W, or `exit` / Ctrl-D in the last shell)
+        // empties `tabs` and queues ViewportCommand::Close. That Close is only
+        // processed *after* update() returns, so bail out of the rest of this
+        // frame now - otherwise the code below would index self.tabs[active] on
+        // an empty Vec and panic on the way out.
+        if self.tabs.is_empty() {
+            return;
+        }
         self.draw_tab_strip(ctx);
 
         // The active tab's colour (if set) tints the accent UI; else default blue.
@@ -1310,12 +1318,19 @@ fn open_config() {
         eprintln!("tessera: couldn't locate a config directory to open");
         return;
     };
-    if let Err(e) = std::process::Command::new("open")
+    match std::process::Command::new("open")
         .arg("-t") // open in the default text editor, not "run" it
         .arg(&path)
         .spawn()
     {
-        eprintln!("tessera: couldn't open {}: {e}", path.display());
+        // Reap the short-lived `open` helper on a detached thread so it doesn't
+        // linger as a zombie process for the rest of the session.
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => eprintln!("tessera: couldn't open {}: {e}", path.display()),
     }
 }
 
