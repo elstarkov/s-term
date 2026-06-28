@@ -9,6 +9,10 @@
   splitting and tabs - the Ghostty look with iTerm2-style splits.
 </p>
 
+<p align="center">
+  <img src="assets/demo.gif" width="820" alt="Tessera - splitting and rearranging panes">
+</p>
+
 ---
 
 Tessera tiles your shells like a mosaic: split panes by keyboard **or** by
@@ -30,6 +34,8 @@ is a real terminal running a real shell (or `tmux`).
 - **GPU-accelerated** rendering via `eframe`/`egui`.
 - **Real terminal emulation** - full VT/ANSI, colours, scrollback, selection,
   copy/paste - powered by Alacritty's terminal core.
+- **Auto-hiding scrollbars** - a slim iTerm2-style scrollbar fades in while you
+  scroll back through a pane's history and fades away again when you stop.
 - **Nerd Font ready** - bundles a Nerd Font symbols fallback, so prompt icons
   and powerline glyphs render out of the box.
 
@@ -46,7 +52,8 @@ is a real terminal running a real shell (or `tmux`).
 | `Cmd+F` | Search the scrollback (Enter / Shift+Enter to step) |
 | `Cmd+Alt+←/→/↑/↓` | Move focus between panes |
 | drag a border | Resize the two adjacent panes |
-| double-click a tab | Rename it · right-click a tab | Set its colour |
+| double-click a tab | Rename it |
+| right-click a tab | Set its colour |
 | drag a tab | Reorder it in the strip, or drop on a pane to merge |
 
 ## Run it
@@ -120,7 +127,8 @@ src/
   layout.rs   Arena-based binary split tree + pure geometry pass + merge
 vendor/
   egui_term/  Vendored terminal widget (MIT), patched so keyboard input
-              follows the focused pane, plus regex scrollback search
+              follows the focused pane, plus regex scrollback search,
+              auto-hiding scrollbars, and a dirty-gated render path
 ```
 
 ## Credits & license
