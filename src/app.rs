@@ -802,8 +802,15 @@ impl Tessera {
                                     i.key_pressed(Key::Escape),
                                 )
                             });
-                            if te.lost_focus() && enter {
-                                action = Some((shift, false)); // Enter: older, Shift+Enter: newer
+                            // Step matches on Enter (older) / Shift+Enter (newer)
+                            // while the search field owns the keyboard. We can't
+                            // gate on `te.lost_focus()`: a singleline TextEdit only
+                            // surrenders focus on *plain* Enter (so Shift+Enter
+                            // never registers), and even that is immediately undone
+                            // by the auto-refocus above - so the field never reports
+                            // losing focus and the old condition never fired.
+                            if enter && !search.terminal_focused {
+                                action = Some((shift, false));
                                 te.request_focus();
                             }
                             // "3 / 20" style match counter.
