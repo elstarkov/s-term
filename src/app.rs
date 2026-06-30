@@ -90,6 +90,12 @@ pub struct Tessera {
     pad: Vec2,
     /// User-rebindable discrete shortcuts.
     keybinds: Keybinds,
+    /// The pane whose drag-grip the pointer is currently holding down, if any -
+    /// the single source of truth for a pane drag. Tracked in app state (rather
+    /// than an egui drag-payload) so it survives the cursor crossing out of the
+    /// pane area into the top chrome; re-tiling, tearing into a tab, and the
+    /// float card all key off it. Set on press, cleared when the button lifts.
+    pane_grip_down: Option<PaneId>,
 }
 
 const ACCENT: Color32 = Color32::from_rgb(102, 161, 255);
@@ -171,6 +177,7 @@ impl Tessera {
             bar_bg,
             pad: Vec2::new(settings.padding.0, settings.padding.1),
             keybinds: settings.keybinds.clone(),
+            pane_grip_down: None,
         };
         // First tab fills the window. If the shell can't spawn we can't do
         // anything useful, so fail loudly.
@@ -268,6 +275,58 @@ impl Tessera {
                 }
             }
         }
+    }
+
+    /// Move pane `src` so it sits as a split of `target` on the chosen side,
+    /// within the active tab (re-tiling, iTerm2-style). Both panes live in the
+    /// active tab; `src` is detached from its current spot (collapsing its old
+    /// sibling) and re-inserted next to `target`.
+    fn move_pane(&mut self, src: PaneId, target: PaneId, axis: Axis, after: bool) {
+        if src == target {
+            return;
+        }
+        let tab = &mut self.tabs[self.active];
+        if !tab.tree.contains(src) || !tab.tree.contains(target) {
+            return;
+        }
+        if !tab.tree.close(src) {
+            return; // src was the only pane - nothing to move
+        }
+        tab.tree.split(target, src, axis, after);
+        tab.focused = src;
+    }
+
+    /// Tear pane `src` out of the active tab into its own new tab, inserted at
+    /// strip slot `insert_at`. The new tab becomes active; the source tab keeps
+    /// its remaining panes (the grip is only offered when it has 2+).
+    fn tear_pane_to_tab(&mut self, src: PaneId, insert_at: usize) {
+        let active = self.active;
+        if !self.tabs[active].tree.contains(src) {
+            return;
+        }
+        let next = self.tabs[active].tree.focus_after_close(src);
+        if !self.tabs[active].tree.close(src) {
+            return; // src is the tab's only pane - tearing it out is a no-op
+        }
+        // Keep the source tab's focus pointing at a pane it still owns.
+        if self.tabs[active].focused == src {
+            let fallback = self.tabs[active].tree.first_pane();
+            self.tabs[active].focused = next
+                .filter(|p| self.panes.contains_key(p))
+                .unwrap_or(fallback);
+        }
+        let at = insert_at.min(self.tabs.len());
+        self.tabs.insert(
+            at,
+            Tab {
+                tree: Tree::new(src),
+                focused: src,
+                last_area: Rect::ZERO,
+                color: None,
+                name: None,
+            },
+        );
+        self.active = at;
     }
 
     /// Split the active tab's focused pane along `axis`.
@@ -455,6 +514,22 @@ impl Tessera {
         let mut set_color: Option<(usize, Option<Color32>)> = None;
         let mut start_edit: Option<(usize, String)> = None;
         let mut pending_reorder: Option<(usize, usize)> = None;
+        // A pane torn out of its tab and dropped on the strip → (pane, slot).
+        let mut pending_tear: Option<(PaneId, usize)> = None;
+        // Top of the pane area from last frame = bottom of the top chrome (tab
+        // strip + status bar). A torn-out pane dropped anywhere in that chrome
+        // becomes a tab, so the gap between the two bars isn't a dead zone you
+        // can release into and have nothing happen.
+        let chrome_bottom = self
+            .tabs
+            .get(self.active)
+            .map(|t| t.last_area.top())
+            .unwrap_or(0.0);
+        // The pane being dragged by its grip, tracked in app state. Unlike the
+        // egui drag-and-drop payload, this reliably survives the cursor crossing
+        // from the pane area up into the top chrome - so the tear keys off it, not
+        // the payload (which gets dropped at the panel boundary).
+        let grip_pane = self.pane_grip_down;
         let strip = egui::Frame::default()
             .fill(self.bar_bg)
             .inner_margin(Margin::symmetric(8, 7));
@@ -611,14 +686,28 @@ impl Tessera {
                     .on_hover_text("Settings");
                 });
 
-                // While dragging a tab over the strip: show where it would land,
-                // and on release reorder it there. Dropping anywhere in the strip
-                // works - between tabs, before the first, or after the last.
-                if egui::DragAndDrop::has_payload_of_type::<TabDrag>(ui.ctx()) {
+                // While dragging a tab *or* a torn-out pane over the strip: show
+                // where it would land, and on release drop it there. Dropping
+                // anywhere in the strip works - between tabs, before the first, or
+                // after the last. A tab reorders; a pane becomes a new tab.
+                //
+                // A tab drag is tracked by the egui drag-payload; a pane drag is
+                // tracked by `grip_pane` (app state), which - unlike a drag-payload
+                // - survives the cursor crossing out of the central panel into this
+                // chrome, so a release up here actually registers.
+                let tab_payload = egui::DragAndDrop::has_payload_of_type::<TabDrag>(ui.ctx());
+                if tab_payload || grip_pane.is_some() {
                     if let (Some(p), Some(first)) =
                         (ui.ctx().pointer_latest_pos(), tab_rects.first().copied())
                     {
-                        if p.y >= first.top() - 8.0 && p.y <= first.bottom() + 8.0 {
+                        // A dragged tab only reorders when released on the strip
+                        // itself; a torn-out pane can land anywhere in the top
+                        // chrome (strip *and* the status bar below it), so the gap
+                        // between the bars isn't a dead zone.
+                        let in_strip = p.y >= first.top() - 8.0 && p.y <= first.bottom() + 8.0;
+                        let in_chrome =
+                            grip_pane.is_some() && chrome_bottom > 1.0 && p.y < chrome_bottom;
+                        if in_strip || in_chrome {
                             // Insertion slot = number of tabs whose centre is left
                             // of the cursor (0 = before the first tab).
                             let insert = tab_rects
@@ -636,13 +725,15 @@ impl Tessera {
                                 [pos2(x, first.top()), pos2(x, first.bottom())],
                                 Stroke::new(2.5, ACCENT),
                             );
-                            // Released over the strip → take the payload (so the
-                            // content-area merge handler won't also fire) and reorder.
+                            // Released over the strip → reorder the dragged tab, or
+                            // tear the dragged pane out into a new tab here.
                             if ui.input(|i| i.pointer.any_released()) {
                                 if let Some(drag) =
                                     egui::DragAndDrop::take_payload::<TabDrag>(ui.ctx())
                                 {
                                     pending_reorder = Some((drag.src, insert));
+                                } else if let Some(pane) = grip_pane {
+                                    pending_tear = Some((pane, insert));
                                 }
                             }
                         }
@@ -661,9 +752,11 @@ impl Tessera {
                 tab.color = c;
             }
         }
-        // Reorder wins over spring-load's transient active change; its indices are
-        // still valid because colour above ran before the list changed.
-        if let Some((src, to)) = pending_reorder {
+        // Reorder/tear win over spring-load's transient active change; their
+        // indices are still valid because colour above ran before the list changed.
+        if let Some((pane, insert)) = pending_tear {
+            self.tear_pane_to_tab(pane, insert);
+        } else if let Some((src, to)) = pending_reorder {
             self.reorder_tab(src, to);
         } else if let Some(i) = switch_to {
             self.active = i;
@@ -981,19 +1074,45 @@ impl eframe::App for Tessera {
         let mut clicked: Option<PaneId> = None;
         let mut ratio_updates: Vec<(usize, f32)> = Vec::new();
         let mut pending_drop: Option<(usize, PaneId, Axis, bool)> = None;
+        // A pane dragged onto another pane in this tab → (src, target, axis, after).
+        let mut pending_pane_drop: Option<(PaneId, PaneId, Axis, bool)> = None;
+        // Which grip the pointer is holding (carried over from last frame). Kept
+        // alive across the whole gesture so the drag survives the cursor leaving
+        // the pane; written back to self after the panel closes.
+        let mut grip_down = self.pane_grip_down;
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             let area = ui.max_rect();
             self.tabs[active].last_area = area;
             let (leaves, dividers) = self.tabs[active].tree.geometry(area);
             let radius = CornerRadius::same(PANE_RADIUS);
+            // The pane currently being dragged out by its grip, if any (this
+            // frame's snapshot of the app-state signal - see `pane_grip_down`).
+            // Its source terminal must not also start a text selection meanwhile.
+            let pane_drag_src = grip_down;
+            let multi = leaves.len() > 1;
 
-            // 1) Draw each pane as a rounded card with padded text inside.
+            // 1) Draw each pane as a rounded card with padded text inside, plus a
+            //    hover grip you can drag to re-tile the pane or tear it into a tab.
             for (pane_id, rect) in &leaves {
                 // Rounded card background; the terminal (same bg colour) sits inset
                 // by PANE_PAD so glyphs aren't flush against the edges.
                 ui.painter().rect_filled(*rect, radius, term_bg);
                 let inner = rect.shrink2(pad);
+
+                // Hover-grip hit area, hugging the pane's top edge. The visible
+                // handle is much slimmer (drawn below); this stays a bit larger so
+                // it's still easy to grab.
+                let grip_rect = Rect::from_center_size(
+                    pos2(rect.center().x, rect.top() + 8.0),
+                    egui::vec2(40.0, 14.0),
+                );
+                let ptr = ui.ctx().pointer_latest_pos();
+                let pane_hovered = ptr.is_some_and(|p| rect.contains(p));
+                let dragging_this = pane_drag_src == Some(*pane_id);
+                let over_grip = multi && ptr.is_some_and(|p| grip_rect.contains(p));
+                let suppress_mouse = over_grip || dragging_this;
+
                 let Some(pane) = self.panes.get_mut(pane_id) else {
                     continue;
                 };
@@ -1001,6 +1120,7 @@ impl eframe::App for Tessera {
                     .allocate_new_ui(UiBuilder::new().max_rect(inner), |ui| {
                         let view = TerminalView::new(ui, &mut pane.backend)
                             .set_focus(*pane_id == focused && panes_focusable)
+                            .set_pointer_input(!suppress_mouse)
                             .set_theme(theme.clone())
                             .set_font(font.clone())
                             .set_size(inner.size());
@@ -1009,6 +1129,53 @@ impl eframe::App for Tessera {
                     .inner;
                 if resp.clicked() {
                     clicked = Some(*pane_id);
+                }
+
+                // The grip: only when the tab has 2+ panes (otherwise there's
+                // nothing to re-tile, and the whole tab is already draggable). It
+                // fades in on hover and stays live for the whole drag - once the
+                // press is recorded, `dragging_this` (driven by app state) stays
+                // true even after the cursor leaves the pane, so the grip doesn't
+                // drop mid-gesture.
+                let want_grip =
+                    multi && ((pane_hovered && pane_drag_src.is_none()) || dragging_this);
+                let vis = ui.ctx().animate_bool_with_time(
+                    Id::new(("tessera_grip_vis", active, pane_id)),
+                    want_grip,
+                    0.12,
+                );
+                if want_grip {
+                    let g = ui.interact(
+                        grip_rect,
+                        Id::new(("tessera_pane_grip", active, pane_id)),
+                        Sense::click_and_drag(),
+                    );
+                    // Record the held grip from the press onward (true while the
+                    // button is down on it, even when dragging outside the pane).
+                    // This is the one signal the whole pane drag keys off.
+                    if g.is_pointer_button_down_on() {
+                        grip_down = Some(*pane_id);
+                    }
+                    if g.clicked() {
+                        clicked = Some(*pane_id);
+                    }
+                    if g.dragged() || g.drag_started() {
+                        ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+                    } else if g.hovered() {
+                        ui.ctx().set_cursor_icon(CursorIcon::Grab);
+                    }
+                }
+                if vis > 0.003 {
+                    // Just a slim handle bar hugging the top edge - no plate.
+                    let bar = Rect::from_center_size(
+                        pos2(rect.center().x, rect.top() + 6.0),
+                        egui::vec2(26.0, 4.0),
+                    );
+                    ui.painter().rect_filled(
+                        bar,
+                        CornerRadius::same(2),
+                        Color32::from_white_alpha((vis * 160.0) as u8),
+                    );
                 }
             }
 
@@ -1085,7 +1252,41 @@ impl eframe::App for Tessera {
                     }
                 }
             }
+
+            // 4b) Pane drag-and-drop within the tab: dragging a pane by its grip
+            //     and dropping it on another pane re-tiles it onto the chosen half.
+            //     A plain hit-test on the grip-press state (mirroring the tear in
+            //     draw_tab_strip), so it can't desync from it. Source isn't a target.
+            if let Some(src) = pane_drag_src {
+                let ptr = ui.ctx().pointer_latest_pos();
+                let released = ui.input(|i| i.pointer.any_released());
+                for (pane_id, rect) in &leaves {
+                    if *pane_id == src {
+                        continue;
+                    }
+                    if ptr.is_some_and(|p| rect.contains(p)) {
+                        let pos = ptr.unwrap_or_else(|| rect.center());
+                        let (axis, after) = drop_side(*rect, pos);
+                        ui.painter().rect_filled(
+                            drop_half(*rect, axis, after),
+                            radius,
+                            Color32::from_rgba_unmultiplied(102, 161, 255, 70),
+                        );
+                        if released {
+                            pending_pane_drop = Some((src, *pane_id, axis, after));
+                        }
+                    }
+                }
+            }
         });
+
+        // The grip drag ends the moment no pointer button is held - clear it then
+        // (covers normal release and any release we might not have observed, e.g.
+        // the window losing focus mid-drag).
+        if !ctx.input(|i| i.pointer.any_down()) {
+            grip_down = None;
+        }
+        self.pane_grip_down = grip_down;
 
         if let Some(p) = clicked {
             self.tabs[active].focused = p;
@@ -1099,6 +1300,9 @@ impl eframe::App for Tessera {
         }
         if let Some((src, target_pane, axis, after)) = pending_drop {
             self.merge_tab(src, target_pane, axis, after);
+        }
+        if let Some((src, tgt, axis, after)) = pending_pane_drop {
+            self.move_pane(src, tgt, axis, after);
         }
 
         // Floating, translucent copy of the dragged tab that follows the cursor -
@@ -1167,6 +1371,59 @@ impl eframe::App for Tessera {
                     Color32::from_white_alpha(235),
                 );
             }
+        }
+
+        // Floating, translucent card while a pane is dragged out by its grip -
+        // same "lift" treatment as a dragged tab, labelled with the pane's title.
+        // Keyed off the grip-press state so it tracks the cursor the whole way,
+        // including up onto the tab bar; gated on a real drag so a plain grip
+        // click doesn't flash a card.
+        let pane_dragging = self
+            .pane_grip_down
+            .filter(|_| ctx.input(|i| i.pointer.is_decidedly_dragging()));
+        let plift =
+            ctx.animate_bool_with_time(Id::new("tessera_pane_lift"), pane_dragging.is_some(), 0.12);
+        if let (Some(pid), Some(pos)) = (pane_dragging, ctx.pointer_latest_pos()) {
+            let title = self
+                .panes
+                .get(&pid)
+                .map(|p| p.title.clone())
+                .unwrap_or_else(|| self.default_title.clone());
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                Id::new("tessera_pane_drag_preview"),
+            ));
+            let galley = painter.layout_no_wrap(
+                truncate(&title, 24),
+                FontId::proportional(13.5),
+                Color32::WHITE,
+            );
+            let size = (galley.size() + Vec2::new(28.0, 16.0)) * (1.0 + 0.04 * plift);
+            let rect = Rect::from_center_size(pos, size);
+            let radius = CornerRadius::same(8);
+            if plift > 0.0 {
+                painter.rect_filled(
+                    rect.translate(Vec2::new(0.0, 4.0 * plift)).expand(1.0),
+                    radius,
+                    Color32::from_black_alpha((70.0 * plift) as u8),
+                );
+            }
+            painter.rect_filled(
+                rect,
+                radius,
+                Color32::from_rgba_unmultiplied(TAB_SEL.r(), TAB_SEL.g(), TAB_SEL.b(), 180),
+            );
+            painter.rect_stroke(
+                rect,
+                radius,
+                Stroke::new(1.0, Color32::from_white_alpha(45)),
+                StrokeKind::Inside,
+            );
+            painter.galley(
+                rect.center() - galley.size() * 0.5,
+                galley,
+                Color32::from_white_alpha(235),
+            );
         }
 
         // Scrollback search bar (floats over the focused pane).

@@ -24,9 +24,10 @@ is a real terminal running a real shell (or `tmux`).
 
 - **Native splits** - a binary tiling tree of panes, no `tmux` required. Each
   pane owns its own PTY + shell.
-- **Draggable everything** - drag a border to resize neighbours; drag a tab to
-  reorder it, or drop it onto a pane to merge it in as a split (tab tearing),
-  iTerm2-style, with live drop previews.
+- **Draggable everything** - drag a border to resize neighbours; drag a pane by
+  its top grip to re-tile it next to another pane, or up onto the tab bar to pop
+  it out into its own tab; drag a tab to reorder it, or drop it onto a pane to
+  merge it in as a split (tab tearing) - all iTerm2-style, with live drop previews.
 - **Tabs** - open with `Cmd+T`, jump with `Cmd+1..9`; **right-click for a
   colour**, **double-click to rename**, drag to reorder.
 - **Keyboard-first** - splits, pane navigation (`Cmd+Alt+Arrow`), and direct
@@ -53,6 +54,7 @@ is a real terminal running a real shell (or `tmux`).
 | `Cmd+F` | Search the scrollback (Enter / Shift+Enter to step) |
 | `Cmd+Alt+←/→/↑/↓` | Move focus between panes |
 | drag a border | Resize the two adjacent panes |
+| drag a pane's top grip | Re-tile it next to another pane, or drop on the tab bar for a new tab |
 | double-click a tab | Rename it |
 | right-click a tab | Set its colour |
 | drag a tab | Reorder it in the strip, or drop on a pane to merge |

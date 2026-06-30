@@ -410,6 +410,24 @@ mod tests {
     }
 
     #[test]
+    fn move_pane_retiles_within_the_tree() {
+        // [1 | 2]; move pane 1 to sit below pane 2 (close it, then re-split 2).
+        // This is the sequence Tessera::move_pane runs for an in-tab pane drag.
+        let mut t = Tree::new(1);
+        t.split(1, 2, Axis::Horizontal, true); // [1 | 2]
+        assert!(t.close(1)); // collapses to just pane 2
+        t.split(2, 1, Axis::Vertical, true); // 2 over 1
+        assert!(t.contains(1) && t.contains(2));
+
+        let (leaves, dividers) = t.geometry(area());
+        assert_eq!(leaves.len(), 2, "both panes still present");
+        assert_eq!(dividers.len(), 1, "exactly one divider");
+        let p1 = leaves.iter().find(|(p, _)| *p == 1).unwrap().1;
+        let p2 = leaves.iter().find(|(p, _)| *p == 2).unwrap().1;
+        assert!(p2.top() < p1.top(), "pane 2 ends up above pane 1");
+    }
+
+    #[test]
     fn close_collapses_back_to_a_single_pane() {
         let mut a = Tree::new(1);
         let b = Tree::new(2);

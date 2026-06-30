@@ -44,6 +44,11 @@ pub struct TerminalViewState {
 pub struct TerminalView<'a> {
     widget_id: Id,
     has_focus: bool,
+    /// When false, the terminal ignores pointer input (clicks, selection, wheel)
+    /// but still takes keyboard input if focused. Tessera uses this so a pane's
+    /// hover grip can be grabbed without the terminal underneath starting a
+    /// text selection at the same time.
+    pointer_input: bool,
     size: Vec2,
     backend: &'a mut TerminalBackend,
     font: TerminalFont,
@@ -83,12 +88,19 @@ impl<'a> TerminalView<'a> {
         Self {
             widget_id,
             has_focus: false,
+            pointer_input: true,
             size: ui.available_size(),
             backend,
             font: TerminalFont::default(),
             theme: TerminalTheme::default(),
             bindings_layout: BindingsLayout::new(),
         }
+    }
+
+    #[inline]
+    pub fn set_pointer_input(mut self, enabled: bool) -> Self {
+        self.pointer_input = enabled;
+        self
     }
 
     #[inline]
@@ -157,6 +169,9 @@ impl<'a> TerminalView<'a> {
         if !has_focus && !hovered {
             return self;
         }
+        // Pointer interaction (selection, clicks, wheel) is additionally gated so
+        // the pane's drag grip can be grabbed without selecting text underneath.
+        let mouse_ok = hovered && self.pointer_input;
 
         let modifiers = layout.ctx.input(|i| i.modifiers);
         let events = layout.ctx.input(|i| i.events.clone());
@@ -177,7 +192,7 @@ impl<'a> TerminalView<'a> {
                         ))
                     }
                 },
-                egui::Event::MouseWheel { unit, delta, .. } if hovered => {
+                egui::Event::MouseWheel { unit, delta, .. } if mouse_ok => {
                     // A wheel gesture over this pane lights up the auto-hiding
                     // scrollbar - even if the scroll is clamped at the top/bottom,
                     // so it behaves the same as iTerm2 (tessera).
@@ -195,7 +210,7 @@ impl<'a> TerminalView<'a> {
                     modifiers,
                     pos,
                     ..
-                } if hovered => input_actions.push(process_button_click(
+                } if mouse_ok => input_actions.push(process_button_click(
                     state,
                     layout,
                     self.backend,
@@ -205,7 +220,7 @@ impl<'a> TerminalView<'a> {
                     &modifiers,
                     pressed,
                 )),
-                egui::Event::PointerMoved(pos) if hovered => {
+                egui::Event::PointerMoved(pos) if mouse_ok => {
                     input_actions = process_mouse_move(
                         state,
                         layout,
