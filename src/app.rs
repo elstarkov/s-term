@@ -344,6 +344,12 @@ impl Tessera {
                 PtyEvent::Exit | PtyEvent::ChildExit(_) => to_close.push(id),
                 _ => {}
             }
+            // Any output for the pane means the shell has redrawn after a Cmd+K
+            // (Ctrl+L) - now drop the scrollback that redraw scrolled off, so the
+            // cleared lines can't be pulled back by resizing the window.
+            if let Some(p) = self.panes.get_mut(&id) {
+                p.backend.finish_clear();
+            }
         }
         for id in to_close {
             self.close_pane(id, ctx);
@@ -405,6 +411,13 @@ impl Tessera {
         if consume_keyspec(ctx, kb.close_pane) {
             let pane = self.tabs[self.active].focused;
             self.close_pane(pane, ctx);
+        }
+        // Clear the focused pane's scrollback + screen (iTerm2-style Cmd+K).
+        if consume_keyspec(ctx, kb.clear) {
+            let pane = self.tabs[self.active].focused;
+            if let Some(p) = self.panes.get_mut(&pane) {
+                p.backend.clear();
+            }
         }
         // Open scrollback search on the focused pane.
         if consume_keyspec(ctx, kb.find) {

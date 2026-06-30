@@ -49,6 +49,7 @@ is a real terminal running a real shell (or `tmux`).
 | `Cmd+D` | Split right (panes side-by-side) |
 | `Cmd+Shift+D` | Split down (panes stacked) |
 | `Cmd+W` | Close the focused pane |
+| `Cmd+K` | Clear the terminal — scrollback + screen (prompt to the top) |
 | `Cmd+F` | Search the scrollback (Enter / Shift+Enter to step) |
 | `Cmd+Alt+←/→/↑/↓` | Move focus between panes |
 | drag a border | Resize the two adjacent panes |
@@ -98,6 +99,7 @@ keybind-split-right = cmd+d
 keybind-split-down  = cmd+shift+d
 keybind-close-pane  = cmd+w
 keybind-find        = cmd+f
+keybind-clear       = cmd+k
 ```
 
 Bundled themes: `default`, `catppuccin-mocha`, `dracula`, `nord`,

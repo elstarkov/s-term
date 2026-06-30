@@ -36,6 +36,7 @@ pub struct Keybinds {
     pub split_down: KeySpec,
     pub close_pane: KeySpec,
     pub find: KeySpec,
+    pub clear: KeySpec,
 }
 
 impl Default for Keybinds {
@@ -47,6 +48,7 @@ impl Default for Keybinds {
             split_down: KeySpec { mods: cmd | Modifiers::SHIFT, key: Key::D },
             close_pane: KeySpec { mods: cmd, key: Key::W },
             find: KeySpec { mods: cmd, key: Key::F },
+            clear: KeySpec { mods: cmd, key: Key::K },
         }
     }
 }
@@ -192,6 +194,7 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
             "keybind-split-down" => set_bind(&mut s.keybinds.split_down, val, line, &mut warnings),
             "keybind-close-pane" => set_bind(&mut s.keybinds.close_pane, val, line, &mut warnings),
             "keybind-find" => set_bind(&mut s.keybinds.find, val, line, &mut warnings),
+            "keybind-clear" => set_bind(&mut s.keybinds.clear, val, line, &mut warnings),
             _ => warnings.push(format!("line {line}: unknown key `{key}`")),
         }
     }
@@ -454,6 +457,7 @@ fn write_template(path: &std::path::Path) {
 # keybind-split-down  = cmd+shift+d
 # keybind-close-pane  = cmd+w
 # keybind-find        = cmd+f
+# keybind-clear       = cmd+k
 ";
     let _ = std::fs::write(path, body);
 }

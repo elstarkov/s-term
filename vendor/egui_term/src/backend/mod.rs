@@ -150,6 +150,9 @@ pub struct TerminalBackend {
     /// index of the focused one (tessera patch).
     search_matches: Vec<Match>,
     search_index: usize,
+    /// True between a Cmd+K clear (which sends Ctrl+L) and the shell's redraw
+    /// landing, so we can then drop the scrollback that redraw scrolled off.
+    clear_pending: bool,
 }
 
 impl TerminalBackend {
@@ -232,6 +235,7 @@ impl TerminalBackend {
             dirty,
             search_matches: Vec::new(),
             search_index: 0,
+            clear_pending: false,
         })
     }
 
@@ -397,6 +401,34 @@ impl TerminalBackend {
         term.selection = None;
         term.scroll_display(Scroll::Bottom);
         self.dirty.store(true, Ordering::Relaxed); // scrolled to the bottom
+    }
+
+    /// Clear the terminal the way iTerm2's Cmd+K does (tessera patch): send the
+    /// shell's own "clear screen" line-editor command (Ctrl+L, `0x0c`). The shell
+    /// clears the screen, redraws the prompt at the top, and keeps any typed
+    /// input, so the cursor stays in sync. A pure emulator-side wipe can't manage
+    /// that: moving the grid behind the shell's back leaves the redrawn prompt and
+    /// the shell's cursor disconnected (text ends up floating mid-screen).
+    pub fn clear(&mut self) {
+        self.write(vec![0x0c]);
+        self.clear_pending = true;
+    }
+
+    /// Finish a pending Cmd+K clear once the shell's Ctrl+L redraw has been
+    /// applied (call this when PTY output for the pane arrives). The redraw's
+    /// `\e[2J` scrolls the old screen into scrollback rather than discarding it,
+    /// so without this a resize taller would pull the "cleared" lines back into
+    /// view. Wiping the history here makes the clear actually stick.
+    pub fn finish_clear(&mut self) {
+        if !self.clear_pending {
+            return;
+        }
+        self.clear_pending = false;
+        let mut term = self.term.lock();
+        term.grid_mut().clear_history();
+        term.scroll_display(Scroll::Bottom);
+        drop(term);
+        self.dirty.store(true, Ordering::Relaxed);
     }
 
     fn process_link_action(
