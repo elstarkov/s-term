@@ -43,12 +43,30 @@ impl Default for Keybinds {
     fn default() -> Self {
         let cmd = Modifiers::COMMAND;
         Self {
-            new_tab: KeySpec { mods: cmd, key: Key::T },
-            split_right: KeySpec { mods: cmd, key: Key::D },
-            split_down: KeySpec { mods: cmd | Modifiers::SHIFT, key: Key::D },
-            close_pane: KeySpec { mods: cmd, key: Key::W },
-            find: KeySpec { mods: cmd, key: Key::F },
-            clear: KeySpec { mods: cmd, key: Key::K },
+            new_tab: KeySpec {
+                mods: cmd,
+                key: Key::T,
+            },
+            split_right: KeySpec {
+                mods: cmd,
+                key: Key::D,
+            },
+            split_down: KeySpec {
+                mods: cmd | Modifiers::SHIFT,
+                key: Key::D,
+            },
+            close_pane: KeySpec {
+                mods: cmd,
+                key: Key::W,
+            },
+            find: KeySpec {
+                mods: cmd,
+                key: Key::F,
+            },
+            clear: KeySpec {
+                mods: cmd,
+                key: Key::K,
+            },
         }
     }
 }
@@ -156,7 +174,12 @@ pub fn config_path() -> Option<PathBuf> {
         }
     }
     let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".config").join("tessera").join("config"))
+    Some(
+        PathBuf::from(home)
+            .join(".config")
+            .join("tessera")
+            .join("config"),
+    )
 }
 
 /// Parse config text into `Settings`, collecting human-readable warnings for
@@ -173,7 +196,10 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
             continue;
         }
         let Some((key, val)) = line.split_once('=') else {
-            warnings.push(format!("line {}: expected `key = value`, got `{line}`", i + 1));
+            warnings.push(format!(
+                "line {}: expected `key = value`, got `{line}`",
+                i + 1
+            ));
             continue;
         };
         let key = key.trim();
@@ -190,7 +216,9 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
             "background" => s.background = some_unless_empty(val),
             "foreground" => s.foreground = some_unless_empty(val),
             "keybind-new-tab" => set_bind(&mut s.keybinds.new_tab, val, line, &mut warnings),
-            "keybind-split-right" => set_bind(&mut s.keybinds.split_right, val, line, &mut warnings),
+            "keybind-split-right" => {
+                set_bind(&mut s.keybinds.split_right, val, line, &mut warnings)
+            }
             "keybind-split-down" => set_bind(&mut s.keybinds.split_down, val, line, &mut warnings),
             "keybind-close-pane" => set_bind(&mut s.keybinds.close_pane, val, line, &mut warnings),
             "keybind-find" => set_bind(&mut s.keybinds.find, val, line, &mut warnings),
@@ -226,7 +254,11 @@ fn set_bind(target: &mut KeySpec, val: &str, line: usize, warns: &mut Vec<String
 /// token is the key (a letter, digit, or an egui key name like "Enter").
 /// Case-insensitive. Returns `None` on any unrecognised token.
 pub fn parse_keyspec(s: &str) -> Option<KeySpec> {
-    let parts: Vec<&str> = s.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();
+    let parts: Vec<&str> = s
+        .split('+')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
     let (key_tok, mod_toks) = parts.split_last()?;
     let mut mods = Modifiers::default();
     for m in mod_toks {

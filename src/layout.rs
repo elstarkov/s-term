@@ -34,8 +34,15 @@ pub enum Dir {
 }
 
 enum Node {
-    Leaf { pane: PaneId },
-    Split { axis: Axis, ratio: f32, a: usize, b: usize },
+    Leaf {
+        pane: PaneId,
+    },
+    Split {
+        axis: Axis,
+        ratio: f32,
+        a: usize,
+        b: usize,
+    },
 }
 
 struct Entry {
@@ -112,8 +119,17 @@ impl Tree {
         // The existing pane moves into a fresh leaf; the old slot becomes a Split.
         let kept = self.alloc(Node::Leaf { pane: target }, Some(leaf));
         let fresh = self.alloc(Node::Leaf { pane: new_pane }, Some(leaf));
-        let (a, b) = if new_after { (kept, fresh) } else { (fresh, kept) };
-        self.nodes[leaf].node = Node::Split { axis, ratio: 0.5, a, b };
+        let (a, b) = if new_after {
+            (kept, fresh)
+        } else {
+            (fresh, kept)
+        };
+        self.nodes[leaf].node = Node::Split {
+            axis,
+            ratio: 0.5,
+            a,
+            b,
+        };
     }
 
     /// Recursively copy the subtree rooted at `src_idx` in `src` into this
@@ -123,7 +139,15 @@ impl Tree {
         match src.nodes[src_idx].node {
             Node::Leaf { pane } => self.alloc(Node::Leaf { pane }, parent),
             Node::Split { axis, ratio, a, b } => {
-                let new = self.alloc(Node::Split { axis, ratio, a: 0, b: 0 }, parent);
+                let new = self.alloc(
+                    Node::Split {
+                        axis,
+                        ratio,
+                        a: 0,
+                        b: 0,
+                    },
+                    parent,
+                );
                 let na = self.import_from(src, a, Some(new));
                 let nb = self.import_from(src, b, Some(new));
                 if let Node::Split { a, b, .. } = &mut self.nodes[new].node {
@@ -150,8 +174,17 @@ impl Tree {
         };
         let kept = self.alloc(Node::Leaf { pane: target }, Some(leaf));
         let imported = self.import_from(src, src.root, Some(leaf));
-        let (a, b) = if new_after { (kept, imported) } else { (imported, kept) };
-        self.nodes[leaf].node = Node::Split { axis, ratio: 0.5, a, b };
+        let (a, b) = if new_after {
+            (kept, imported)
+        } else {
+            (imported, kept)
+        };
+        self.nodes[leaf].node = Node::Split {
+            axis,
+            ratio: 0.5,
+            a,
+            b,
+        };
         true
     }
 
@@ -276,8 +309,7 @@ impl Tree {
                 Axis::Horizontal => {
                     let avail = (rect.width() - DIVIDER).max(0.0);
                     let aw = avail * ratio;
-                    let a_rect =
-                        Rect::from_min_size(rect.min, vec2(aw, rect.height()));
+                    let a_rect = Rect::from_min_size(rect.min, vec2(aw, rect.height()));
                     let div_rect = Rect::from_min_size(
                         pos2(rect.min.x + aw, rect.min.y),
                         vec2(DIVIDER, rect.height()),
@@ -299,8 +331,7 @@ impl Tree {
                 Axis::Vertical => {
                     let avail = (rect.height() - DIVIDER).max(0.0);
                     let ah = avail * ratio;
-                    let a_rect =
-                        Rect::from_min_size(rect.min, vec2(rect.width(), ah));
+                    let a_rect = Rect::from_min_size(rect.min, vec2(rect.width(), ah));
                     let div_rect = Rect::from_min_size(
                         pos2(rect.min.x, rect.min.y + ah),
                         vec2(rect.width(), DIVIDER),
@@ -327,11 +358,7 @@ impl Tree {
 /// Pick the best pane to move to from `current` in direction `dir`, given the
 /// current geometry. Chooses the nearest pane that lies in `dir` and overlaps
 /// on the perpendicular axis (so navigation feels spatial, like iTerm2/Ghostty).
-pub fn neighbor(
-    leaves: &[(PaneId, Rect)],
-    current: PaneId,
-    dir: Dir,
-) -> Option<PaneId> {
+pub fn neighbor(leaves: &[(PaneId, Rect)], current: PaneId, dir: Dir) -> Option<PaneId> {
     let cur = leaves.iter().find(|(p, _)| *p == current)?.1;
     let cc = cur.center();
     let mut best: Option<PaneId> = None;

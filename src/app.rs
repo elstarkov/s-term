@@ -8,15 +8,15 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 use eframe::egui;
 use egui::{
-    pos2, Color32, CornerRadius, CursorIcon, FontId, Id, Key, KeyboardShortcut, Margin,
-    Modifiers, Pos2, Rect, Sense, Stroke, StrokeKind, UiBuilder, Vec2,
+    pos2, Color32, CornerRadius, CursorIcon, FontId, Id, Key, KeyboardShortcut, Margin, Modifiers,
+    Pos2, Rect, Sense, Stroke, StrokeKind, UiBuilder, Vec2,
 };
 use egui_term::{
-    BackendCommand, BackendSettings, FontSettings, PtyEvent, TerminalBackend,
-    TerminalFont, TerminalTheme, TerminalView,
+    BackendCommand, BackendSettings, FontSettings, PtyEvent, TerminalBackend, TerminalFont,
+    TerminalTheme, TerminalView,
 };
 
-use crate::config::{Keybinds, KeySpec, Settings};
+use crate::config::{KeySpec, Keybinds, Settings};
 use crate::layout::{neighbor, Axis, Dir, PaneId, Tree};
 
 /// Launch configuration (what each pane runs).
@@ -83,9 +83,9 @@ pub struct Tessera {
     editing: Option<Editing>,
     search: Option<Search>,
     /// Chrome surfaces, derived from the theme background at startup.
-    term_bg: Color32,  // pane card + the padding frame behind the terminal
+    term_bg: Color32, // pane card + the padding frame behind the terminal
     window_bg: Color32, // gutter / divider gaps
-    bar_bg: Color32,   // tab strip + status bar
+    bar_bg: Color32,    // tab strip + status bar
     /// Per-pane inner padding (window-padding-x / -y).
     pad: Vec2,
     /// User-rebindable discrete shortcuts.
@@ -430,8 +430,15 @@ impl Tessera {
             self.new_tab(ctx);
         }
         const NUM_KEYS: [Key; 9] = [
-            Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6,
-            Key::Num7, Key::Num8, Key::Num9,
+            Key::Num1,
+            Key::Num2,
+            Key::Num3,
+            Key::Num4,
+            Key::Num5,
+            Key::Num6,
+            Key::Num7,
+            Key::Num8,
+            Key::Num9,
         ];
         for (i, key) in NUM_KEYS.iter().enumerate() {
             if hit(cmd, *key) && i < self.tabs.len() {
@@ -533,214 +540,225 @@ impl Tessera {
         let strip = egui::Frame::default()
             .fill(self.bar_bg)
             .inner_margin(Margin::symmetric(8, 7));
-        egui::TopBottomPanel::top("tabs").frame(strip).show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                let radius = CornerRadius::same(TAB_RADIUS);
-                // Rects of each tab in order, for the reorder insertion indicator.
-                let mut tab_rects: Vec<Rect> = Vec::new();
-                // The tab currently being torn out (if any) - its slot is drawn as
-                // a faint gap, since the tab itself floats under the cursor.
-                let dragged_src =
-                    egui::DragAndDrop::payload::<TabDrag>(ui.ctx()).map(|d| d.src);
+        egui::TopBottomPanel::top("tabs")
+            .frame(strip)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let radius = CornerRadius::same(TAB_RADIUS);
+                    // Rects of each tab in order, for the reorder insertion indicator.
+                    let mut tab_rects: Vec<Rect> = Vec::new();
+                    // The tab currently being torn out (if any) - its slot is drawn as
+                    // a faint gap, since the tab itself floats under the cursor.
+                    let dragged_src =
+                        egui::DragAndDrop::payload::<TabDrag>(ui.ctx()).map(|d| d.src);
 
-                for (i, tab) in self.tabs.iter().enumerate() {
-                    let selected = i == self.active;
-                    // Default label is the shell name (e.g. "zsh"); a custom name
-                    // from the rename popup overrides it. A fresh tab always shows
-                    // "N  zsh" - names never carry over to a new tab.
-                    let display = tab.name.as_deref().unwrap_or(self.default_title.as_str());
+                    for (i, tab) in self.tabs.iter().enumerate() {
+                        let selected = i == self.active;
+                        // Default label is the shell name (e.g. "zsh"); a custom name
+                        // from the rename popup overrides it. A fresh tab always shows
+                        // "N  zsh" - names never carry over to a new tab.
+                        let display = tab.name.as_deref().unwrap_or(self.default_title.as_str());
 
-                    let text_color = if selected {
-                        Color32::WHITE
-                    } else {
-                        Color32::from_gray(165)
-                    };
-                    // Custom-drawn so one widget can click (switch), double-click
-                    // (rename) and drag (tear out), while keeping the rounded look.
-                    let galley = ui.painter().layout_no_wrap(
-                        format!("{}  {}", i + 1, truncate(display, 24)),
-                        FontId::proportional(14.0),
-                        text_color,
-                    );
-                    let width = (galley.size().x + 36.0).max(TAB_MIN_W);
-                    let (rect, resp) =
-                        ui.allocate_exact_size(egui::vec2(width, 30.0), Sense::click_and_drag());
-                    tab_rects.push(rect);
-                    if dragged_src == Some(i) {
-                        // This tab is lifted out and floating under the cursor;
-                        // leave a faint recessed gap where it normally sits.
-                        ui.painter().rect_filled(rect, radius, Color32::from_black_alpha(45));
-                        ui.painter().rect_stroke(
-                            rect,
-                            radius,
-                            Stroke::new(1.0, Color32::from_white_alpha(16)),
-                            StrokeKind::Inside,
-                        );
-                    } else {
-                        let fill = if selected {
-                            TAB_SEL
-                        } else if resp.hovered() {
-                            TAB_HOVER
+                        let text_color = if selected {
+                            Color32::WHITE
                         } else {
-                            TAB_IDLE
+                            Color32::from_gray(165)
                         };
-                        ui.painter().rect_filled(rect, radius, fill);
-                        if let Some(c) = tab.color {
-                            // Tint the whole tab and add a solid colour bar along the
-                            // bottom, so the colour reads whether or not it's active.
-                            let a = if selected { 120 } else { 70 };
-                            ui.painter().rect_filled(
+                        // Custom-drawn so one widget can click (switch), double-click
+                        // (rename) and drag (tear out), while keeping the rounded look.
+                        let galley = ui.painter().layout_no_wrap(
+                            format!("{}  {}", i + 1, truncate(display, 24)),
+                            FontId::proportional(14.0),
+                            text_color,
+                        );
+                        let width = (galley.size().x + 36.0).max(TAB_MIN_W);
+                        let (rect, resp) = ui
+                            .allocate_exact_size(egui::vec2(width, 30.0), Sense::click_and_drag());
+                        tab_rects.push(rect);
+                        if dragged_src == Some(i) {
+                            // This tab is lifted out and floating under the cursor;
+                            // leave a faint recessed gap where it normally sits.
+                            ui.painter()
+                                .rect_filled(rect, radius, Color32::from_black_alpha(45));
+                            ui.painter().rect_stroke(
                                 rect,
                                 radius,
-                                Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a),
+                                Stroke::new(1.0, Color32::from_white_alpha(16)),
+                                StrokeKind::Inside,
                             );
-                            let bar = Rect::from_min_max(
-                                pos2(rect.left() + 8.0, rect.bottom() - 4.0),
-                                pos2(rect.right() - 8.0, rect.bottom() - 2.0),
+                        } else {
+                            let fill = if selected {
+                                TAB_SEL
+                            } else if resp.hovered() {
+                                TAB_HOVER
+                            } else {
+                                TAB_IDLE
+                            };
+                            ui.painter().rect_filled(rect, radius, fill);
+                            if let Some(c) = tab.color {
+                                // Tint the whole tab and add a solid colour bar along the
+                                // bottom, so the colour reads whether or not it's active.
+                                let a = if selected { 120 } else { 70 };
+                                ui.painter().rect_filled(
+                                    rect,
+                                    radius,
+                                    Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a),
+                                );
+                                let bar = Rect::from_min_max(
+                                    pos2(rect.left() + 8.0, rect.bottom() - 4.0),
+                                    pos2(rect.right() - 8.0, rect.bottom() - 2.0),
+                                );
+                                ui.painter().rect_filled(bar, CornerRadius::same(1), c);
+                            }
+                            ui.painter().galley(
+                                rect.center() - galley.size() * 0.5,
+                                galley,
+                                text_color,
                             );
-                            ui.painter().rect_filled(bar, CornerRadius::same(1), c);
                         }
-                        ui.painter()
-                            .galley(rect.center() - galley.size() * 0.5, galley, text_color);
-                    }
 
-                    if resp.double_clicked() {
-                        start_edit = Some((i, display.to_string()));
-                    } else if resp.clicked() {
-                        switch_to = Some(i);
-                    }
-                    resp.dnd_set_drag_payload(TabDrag { src: i });
-                    // Spring-loaded tabs (iTerm2-style): while dragging a tab,
-                    // hovering a *different* tab activates it, so its panes become
-                    // the drop targets and you can drop the dragged tab in there.
-                    if let Some(drag) = resp.dnd_hover_payload::<TabDrag>() {
-                        if drag.src != i {
+                        if resp.double_clicked() {
+                            start_edit = Some((i, display.to_string()));
+                        } else if resp.clicked() {
                             switch_to = Some(i);
                         }
-                    }
-                    // Right-click → tab colour (presets, custom picker, or clear).
-                    resp.context_menu(|ui| {
-                        ui.label("Tab colour");
-                        ui.horizontal(|ui| {
-                            for (name, col) in TAB_PRESETS {
-                                let (sw, r) = ui
-                                    .allocate_exact_size(egui::vec2(22.0, 22.0), Sense::click());
-                                ui.painter().rect_filled(sw, CornerRadius::same(5), *col);
-                                if r.hovered() {
-                                    ui.painter().rect_stroke(
-                                        sw,
-                                        CornerRadius::same(5),
-                                        Stroke::new(1.5, Color32::WHITE),
-                                        StrokeKind::Inside,
+                        resp.dnd_set_drag_payload(TabDrag { src: i });
+                        // Spring-loaded tabs (iTerm2-style): while dragging a tab,
+                        // hovering a *different* tab activates it, so its panes become
+                        // the drop targets and you can drop the dragged tab in there.
+                        if let Some(drag) = resp.dnd_hover_payload::<TabDrag>() {
+                            if drag.src != i {
+                                switch_to = Some(i);
+                            }
+                        }
+                        // Right-click → tab colour (presets, custom picker, or clear).
+                        resp.context_menu(|ui| {
+                            ui.label("Tab colour");
+                            ui.horizontal(|ui| {
+                                for (name, col) in TAB_PRESETS {
+                                    let (sw, r) = ui.allocate_exact_size(
+                                        egui::vec2(22.0, 22.0),
+                                        Sense::click(),
                                     );
+                                    ui.painter().rect_filled(sw, CornerRadius::same(5), *col);
+                                    if r.hovered() {
+                                        ui.painter().rect_stroke(
+                                            sw,
+                                            CornerRadius::same(5),
+                                            Stroke::new(1.5, Color32::WHITE),
+                                            StrokeKind::Inside,
+                                        );
+                                    }
+                                    if r.on_hover_text(*name).clicked() {
+                                        set_color = Some((i, Some(*col)));
+                                        ui.close_menu();
+                                    }
                                 }
-                                if r.on_hover_text(*name).clicked() {
-                                    set_color = Some((i, Some(*col)));
-                                    ui.close_menu();
+                            });
+                            let mut custom = tab.color.unwrap_or(Color32::from_rgb(90, 150, 235));
+                            ui.horizontal(|ui| {
+                                ui.label("Custom:");
+                                if ui.color_edit_button_srgba(&mut custom).changed() {
+                                    set_color = Some((i, Some(custom)));
                                 }
+                            });
+                            if ui.button("Clear colour").clicked() {
+                                set_color = Some((i, None));
+                                ui.close_menu();
                             }
                         });
-                        let mut custom = tab.color.unwrap_or(Color32::from_rgb(90, 150, 235));
-                        ui.horizontal(|ui| {
-                            ui.label("Custom:");
-                            if ui.color_edit_button_srgba(&mut custom).changed() {
-                                set_color = Some((i, Some(custom)));
+                    }
+
+                    // "+" new-tab button.
+                    let plus = ui.painter().layout_no_wrap(
+                        "+".to_string(),
+                        FontId::proportional(18.0),
+                        Color32::from_gray(200),
+                    );
+                    let (rect, resp) =
+                        ui.allocate_exact_size(egui::vec2(34.0, 30.0), Sense::click());
+                    let fill = if resp.hovered() { TAB_HOVER } else { TAB_IDLE };
+                    ui.painter().rect_filled(rect, radius, fill);
+                    ui.painter().galley(
+                        rect.center() - plus.size() * 0.5,
+                        plus,
+                        Color32::from_gray(200),
+                    );
+                    if resp.clicked() {
+                        open_new = true;
+                    }
+                    resp.on_hover_text("New tab (Cmd+T)");
+
+                    // Gear menu, pinned to the far right. The popup is themed
+                    // globally (see configure_style) so it matches the terminal.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.menu_button("⚙", |ui| {
+                            ui.set_min_width(150.0);
+                            if ui.button("Settings").clicked() {
+                                open_settings = true;
+                                ui.close_menu();
                             }
-                        });
-                        if ui.button("Clear colour").clicked() {
-                            set_color = Some((i, None));
-                            ui.close_menu();
-                        }
+                        })
+                        .response
+                        .on_hover_text("Settings");
                     });
-                }
 
-                // "+" new-tab button.
-                let plus = ui.painter().layout_no_wrap(
-                    "+".to_string(),
-                    FontId::proportional(18.0),
-                    Color32::from_gray(200),
-                );
-                let (rect, resp) =
-                    ui.allocate_exact_size(egui::vec2(34.0, 30.0), Sense::click());
-                let fill = if resp.hovered() { TAB_HOVER } else { TAB_IDLE };
-                ui.painter().rect_filled(rect, radius, fill);
-                ui.painter()
-                    .galley(rect.center() - plus.size() * 0.5, plus, Color32::from_gray(200));
-                if resp.clicked() {
-                    open_new = true;
-                }
-                resp.on_hover_text("New tab (Cmd+T)");
-
-                // Gear menu, pinned to the far right. The popup is themed
-                // globally (see configure_style) so it matches the terminal.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.menu_button("⚙", |ui| {
-                        ui.set_min_width(150.0);
-                        if ui.button("Settings").clicked() {
-                            open_settings = true;
-                            ui.close_menu();
-                        }
-                    })
-                    .response
-                    .on_hover_text("Settings");
-                });
-
-                // While dragging a tab *or* a torn-out pane over the strip: show
-                // where it would land, and on release drop it there. Dropping
-                // anywhere in the strip works - between tabs, before the first, or
-                // after the last. A tab reorders; a pane becomes a new tab.
-                //
-                // A tab drag is tracked by the egui drag-payload; a pane drag is
-                // tracked by `grip_pane` (app state), which - unlike a drag-payload
-                // - survives the cursor crossing out of the central panel into this
-                // chrome, so a release up here actually registers.
-                let tab_payload = egui::DragAndDrop::has_payload_of_type::<TabDrag>(ui.ctx());
-                if tab_payload || grip_pane.is_some() {
-                    if let (Some(p), Some(first)) =
-                        (ui.ctx().pointer_latest_pos(), tab_rects.first().copied())
-                    {
-                        // A dragged tab only reorders when released on the strip
-                        // itself; a torn-out pane can land anywhere in the top
-                        // chrome (strip *and* the status bar below it), so the gap
-                        // between the bars isn't a dead zone.
-                        let in_strip = p.y >= first.top() - 8.0 && p.y <= first.bottom() + 8.0;
-                        let in_chrome =
-                            grip_pane.is_some() && chrome_bottom > 1.0 && p.y < chrome_bottom;
-                        if in_strip || in_chrome {
-                            // Insertion slot = number of tabs whose centre is left
-                            // of the cursor (0 = before the first tab).
-                            let insert = tab_rects
-                                .iter()
-                                .position(|r| p.x < r.center().x)
-                                .unwrap_or(tab_rects.len());
-                            let x = if insert == 0 {
-                                tab_rects[0].left() - 3.0
-                            } else if insert < tab_rects.len() {
-                                (tab_rects[insert - 1].right() + tab_rects[insert].left()) * 0.5
-                            } else {
-                                tab_rects[tab_rects.len() - 1].right() + 3.0
-                            };
-                            ui.painter().line_segment(
-                                [pos2(x, first.top()), pos2(x, first.bottom())],
-                                Stroke::new(2.5, ACCENT),
-                            );
-                            // Released over the strip → reorder the dragged tab, or
-                            // tear the dragged pane out into a new tab here.
-                            if ui.input(|i| i.pointer.any_released()) {
-                                if let Some(drag) =
-                                    egui::DragAndDrop::take_payload::<TabDrag>(ui.ctx())
-                                {
-                                    pending_reorder = Some((drag.src, insert));
-                                } else if let Some(pane) = grip_pane {
-                                    pending_tear = Some((pane, insert));
+                    // While dragging a tab *or* a torn-out pane over the strip: show
+                    // where it would land, and on release drop it there. Dropping
+                    // anywhere in the strip works - between tabs, before the first, or
+                    // after the last. A tab reorders; a pane becomes a new tab.
+                    //
+                    // A tab drag is tracked by the egui drag-payload; a pane drag is
+                    // tracked by `grip_pane` (app state), which - unlike a drag-payload
+                    // - survives the cursor crossing out of the central panel into this
+                    // chrome, so a release up here actually registers.
+                    let tab_payload = egui::DragAndDrop::has_payload_of_type::<TabDrag>(ui.ctx());
+                    if tab_payload || grip_pane.is_some() {
+                        if let (Some(p), Some(first)) =
+                            (ui.ctx().pointer_latest_pos(), tab_rects.first().copied())
+                        {
+                            // A dragged tab only reorders when released on the strip
+                            // itself; a torn-out pane can land anywhere in the top
+                            // chrome (strip *and* the status bar below it), so the gap
+                            // between the bars isn't a dead zone.
+                            let in_strip = p.y >= first.top() - 8.0 && p.y <= first.bottom() + 8.0;
+                            let in_chrome =
+                                grip_pane.is_some() && chrome_bottom > 1.0 && p.y < chrome_bottom;
+                            if in_strip || in_chrome {
+                                // Insertion slot = number of tabs whose centre is left
+                                // of the cursor (0 = before the first tab).
+                                let insert = tab_rects
+                                    .iter()
+                                    .position(|r| p.x < r.center().x)
+                                    .unwrap_or(tab_rects.len());
+                                let x = if insert == 0 {
+                                    tab_rects[0].left() - 3.0
+                                } else if insert < tab_rects.len() {
+                                    (tab_rects[insert - 1].right() + tab_rects[insert].left()) * 0.5
+                                } else {
+                                    tab_rects[tab_rects.len() - 1].right() + 3.0
+                                };
+                                ui.painter().line_segment(
+                                    [pos2(x, first.top()), pos2(x, first.bottom())],
+                                    Stroke::new(2.5, ACCENT),
+                                );
+                                // Released over the strip → reorder the dragged tab, or
+                                // tear the dragged pane out into a new tab here.
+                                if ui.input(|i| i.pointer.any_released()) {
+                                    if let Some(drag) =
+                                        egui::DragAndDrop::take_payload::<TabDrag>(ui.ctx())
+                                    {
+                                        pending_reorder = Some((drag.src, insert));
+                                    } else if let Some(pane) = grip_pane {
+                                        pending_tear = Some((pane, insert));
+                                    }
                                 }
                             }
                         }
                     }
-                }
+                });
             });
-        });
         if open_new {
             self.new_tab(ctx);
         }
@@ -775,7 +793,7 @@ impl Tessera {
     fn draw_rename_modal(&mut self, ctx: &egui::Context) {
         let mut captured: Option<(usize, String)> = None;
         let mut result: Option<bool> = None; // Some(true)=confirm, Some(false)=cancel
-        // Tie the popup's accent to the tab being edited (its colour, if set).
+                                             // Tie the popup's accent to the tab being edited (its colour, if set).
         let accent = self
             .editing
             .as_ref()
@@ -955,7 +973,8 @@ impl Tessera {
                             if icon_button(ui, "▲", "Previous match (older) - Enter").clicked() {
                                 action = Some((false, false));
                             }
-                            if icon_button(ui, "▼", "Next match (newer) - Shift+Enter").clicked() {
+                            if icon_button(ui, "▼", "Next match (newer) - Shift+Enter").clicked()
+                            {
                                 action = Some((true, false));
                             }
                             // Esc closes only when the field has focus; when the
@@ -1598,7 +1617,8 @@ fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
     let galley = ui
         .painter()
         .layout_no_wrap(glyph.to_owned(), FontId::monospace(14.0), fg);
-    ui.painter().galley(rect.center() - galley.size() * 0.5, galley, fg);
+    ui.painter()
+        .galley(rect.center() - galley.size() * 0.5, galley, fg);
     if tip.is_empty() {
         resp
     } else {
@@ -1608,7 +1628,12 @@ fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
 
 /// A rounded "pill" text button. `fill` / `text_color` pick a primary (accent)
 /// or ghost (subtle) variant.
-fn pill_button(ui: &mut egui::Ui, text: &str, fill: Color32, text_color: Color32) -> egui::Response {
+fn pill_button(
+    ui: &mut egui::Ui,
+    text: &str,
+    fill: Color32,
+    text_color: Color32,
+) -> egui::Response {
     ui.add(
         egui::Button::new(egui::RichText::new(text).color(text_color).size(14.0))
             .fill(fill)
@@ -1630,7 +1655,8 @@ fn styled_field(
     ui.scope(|ui| {
         let v = ui.visuals_mut();
         v.extreme_bg_color = Color32::from_black_alpha(110);
-        v.selection.bg_fill = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 90);
+        v.selection.bg_fill =
+            Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 90);
         v.selection.stroke = Stroke::new(1.0, accent);
         v.widgets.inactive.corner_radius = CornerRadius::same(8);
         v.widgets.hovered.corner_radius = CornerRadius::same(8);

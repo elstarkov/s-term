@@ -31,7 +31,10 @@ fn main() {
     }
     std::thread::sleep(Duration::from_millis(400));
 
-    eprintln!("dropping {} backends (simulating pane close)...", backends.len());
+    eprintln!(
+        "dropping {} backends (simulating pane close)...",
+        backends.len()
+    );
     drop(backends);
 
     // With the bug, each dropped backend leaves a subscription thread spinning

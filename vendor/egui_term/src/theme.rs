@@ -113,8 +113,7 @@ impl TerminalTheme {
         let index: u8 = 232;
         for i in 0..24 {
             let value = i * 10 + 8;
-            ansi256_colors
-                .insert(index + i, Color32::from_rgb(value, value, value));
+            ansi256_colors.insert(index + i, Color32::from_rgb(value, value, value));
         }
 
         ansi256_colors
@@ -147,8 +146,7 @@ impl TerminalTheme {
                         _ => &self.palette.background,
                     };
 
-                    return hex_to_color(color)
-                        .unwrap_or_else(|_| Color32::from_rgb(255, 0, 255));
+                    return hex_to_color(color).unwrap_or_else(|_| Color32::from_rgb(255, 0, 255));
                 }
 
                 // Other colors
@@ -156,7 +154,7 @@ impl TerminalTheme {
                     Some(color) => *color,
                     None => Color32::from_rgb(0, 0, 0),
                 }
-            },
+            }
             ansi::Color::Named(c) => {
                 let color = match c {
                     NamedColor::Foreground => &self.palette.foreground,
@@ -179,11 +177,9 @@ impl TerminalTheme {
                     NamedColor::BrightMagenta => &self.palette.bright_magenta,
                     NamedColor::BrightCyan => &self.palette.bright_cyan,
                     NamedColor::BrightWhite => &self.palette.bright_white,
-                    NamedColor::BrightForeground => {
-                        match &self.palette.bright_foreground {
-                            Some(color) => color,
-                            None => &self.palette.foreground,
-                        }
+                    NamedColor::BrightForeground => match &self.palette.bright_foreground {
+                        Some(color) => color,
+                        None => &self.palette.foreground,
                     },
                     // Dim terminal colors
                     NamedColor::DimForeground => &self.palette.dim_foreground,
@@ -198,9 +194,8 @@ impl TerminalTheme {
                     _ => &self.palette.background,
                 };
 
-                hex_to_color(color)
-                    .unwrap_or_else(|_| Color32::from_rgb(255, 0, 255))
-            },
+                hex_to_color(color).unwrap_or_else(|_| Color32::from_rgb(255, 0, 255))
+            }
         }
     }
 }
