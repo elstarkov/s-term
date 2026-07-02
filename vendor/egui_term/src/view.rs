@@ -492,7 +492,8 @@ fn process_keyboard_event(
             if modifiers.contains(Modifiers::COMMAND | Modifiers::SHIFT) {
                 BackendCommand::Write(text.as_bytes().to_vec())
             } else {
-                // Hotfix - Send ^V when there's not selection on view.
+                // Plain Ctrl+V belongs to the shell: send the literal ^V
+                // byte (terminal paste is Ctrl+Shift+V).
                 BackendCommand::Write([0x16].to_vec())
             },
             #[cfg(any(target_os = "ios", target_os = "macos"))]
@@ -506,7 +507,8 @@ fn process_keyboard_event(
                 let content = backend.selectable_content();
                 InputAction::WriteToClipboard(content)
             } else {
-                // Hotfix - Send ^C when there's not selection on view.
+                // Plain Ctrl+C belongs to the shell (interrupt): send the
+                // literal ^C byte (terminal copy is Ctrl+Shift+C).
                 InputAction::BackendCall(BackendCommand::Write([0x3].to_vec()))
             }
             #[cfg(any(target_os = "ios", target_os = "macos"))]

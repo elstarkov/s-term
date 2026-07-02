@@ -82,7 +82,7 @@ pub struct Tessera {
     default_title: String,
     editing: Option<Editing>,
     search: Option<Search>,
-    /// Theme-derived surfaces (replace the old hardcoded constants).
+    /// Chrome surfaces, derived from the theme background at startup.
     term_bg: Color32,  // pane card + the padding frame behind the terminal
     window_bg: Color32, // gutter / divider gaps
     bar_bg: Color32,   // tab strip + status bar
@@ -925,12 +925,12 @@ impl Tessera {
                                 )
                             });
                             // Step matches on Enter (older) / Shift+Enter (newer)
-                            // while the search field owns the keyboard. We can't
-                            // gate on `te.lost_focus()`: a singleline TextEdit only
-                            // surrenders focus on *plain* Enter (so Shift+Enter
-                            // never registers), and even that is immediately undone
-                            // by the auto-refocus above - so the field never reports
-                            // losing focus and the old condition never fired.
+                            // while the search field owns the keyboard. Gating on
+                            // `te.lost_focus()` doesn't work here: a singleline
+                            // TextEdit only surrenders focus on *plain* Enter (so
+                            // Shift+Enter would never register), and even that is
+                            // immediately undone by the auto-refocus above, so the
+                            // field never reports losing focus.
                             if enter && !search.terminal_focused {
                                 action = Some((shift, false));
                                 te.request_focus();

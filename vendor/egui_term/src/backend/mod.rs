@@ -211,9 +211,9 @@ impl TerminalBackend {
             .spawn(move || loop {
                 // `recv()` returns Err once every sender is dropped, which happens
                 // when this pane's PTY event loop shuts down (i.e. the pane was
-                // closed). The old code ignored that and re-looped, so `recv()`
-                // returned Err immediately forever - a busy-spin that pegged a
-                // core for every closed pane. Break out of the loop instead.
+                // closed). Break out then: looping again would busy-spin on an
+                // immediately-erroring recv() and peg a core for every closed
+                // pane (tessera patch).
                 let Ok(event) = event_receiver.recv() else {
                     break;
                 };

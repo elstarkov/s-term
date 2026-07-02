@@ -25,8 +25,8 @@ Tests live in `src/layout.rs` (split-tree behaviour), the tail of `src/app.rs`
 (`churn_stress`, `close_pane_leak`, `sync_bench`) are stress/leak harnesses — run with
 `cargo run -p egui_term --example churn_stress`.
 
-Profiling output (`flamegraph.svg`, `perf.data`) and the packaging output (`dist/`,
-which contains stale `mockterm*` artifacts from before the rename) are git-ignored.
+Profiling output (`flamegraph.svg`, `perf.data`) and the packaging output (`dist/`)
+are git-ignored.
 
 ## Architecture
 
@@ -75,7 +75,7 @@ comments before changing behaviour here. The notable local changes:
 - A `dirty` `AtomicBool` shared with the PTY thread so `sync()` skips re-cloning the
   whole grid on frames where nothing changed (hover, idle, a sibling's output).
 - The PTY subscription thread `break`s when `recv()` returns `Err` (every sender
-  dropped = pane closed) instead of busy-looping — a closed pane used to peg a core.
+  dropped = pane closed) instead of busy-looping, which would peg a core per closed pane.
 
 ## Notes
 

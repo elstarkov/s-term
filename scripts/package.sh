@@ -28,8 +28,8 @@ rm -rf "$APP" "$ICONSET" "$DIST/$APP_NAME.icns" "$DIST/$APP_NAME.dmg"
 mkdir -p "$DIST"
 
 echo "==> 1/4  Icon  (assets/icon.png -> $APP_NAME.icns)"
-# Use the committed transparent PNG as the icon source. qlmanage was baking a
-# white background when rasterising the SVG, so we keep a real RGBA source here.
+# Use the committed transparent PNG as the icon source: rasterising the SVG
+# with qlmanage bakes in a white background, losing the alpha channel.
 cp assets/icon.png "$SRC_PNG"
 mkdir -p "$ICONSET"
 gen() { sips -z "$1" "$1" "$SRC_PNG" --out "$ICONSET/$2" >/dev/null; }
